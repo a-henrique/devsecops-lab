@@ -1,0 +1,64 @@
+name: DevSecOps Lab Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    
+
+jobs:
+  sast:
+    name: Run Semgrep (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: "auto"
+          json: "semgrep-report.json"
+
+  iac:
+    name: Run Checkov (IaC)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ckeckout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          output_format: json
+          output_file_path: checkov-report.json
+
+  secrets:
+    name: Run Gitleaks (Secret Scanning)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: detect --source . --report-path gitleaks-report.json --report-format json
+  
+  conatiner:
+    name: Run Trivy (FS Scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy FS
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          ignore-unfixed: true
+          format: "json"
+          output: "trivy-report.json"
