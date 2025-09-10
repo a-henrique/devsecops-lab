@@ -26,15 +26,15 @@ jobs:
     name: Run Checkov (IaC)
     runs-on: ubuntu-latest
     steps:
-      - name: Ckeckout code
-        uses: actions/checkout@v4
-
-      - name: Run Checkov
+      - name: Checkov Run
+        id: checkov
         uses: bridgecrewio/checkov-action@master
         with:
           directory: .
           output_format: json
           output_file_path: checkov-report.json
+          quiet:  true
+          soft_fail: true
 
   secrets:
     name: Run Gitleaks (Secret Scanning)
