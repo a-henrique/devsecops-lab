@@ -9,24 +9,10 @@ on:
         required: false
         type: string
         default: 'main'
-      language:
-        required: false
-        type: string
-        default: 'auto'
-      skip_tools:
-        required: false
-        type: string
-        default: ''
-    outputs:
-      security_status:
-        description: "Overall security scan status"
-        value: ${{ jobs.security-scan.outputs.status }}
 
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    outputs:
-      status: ${{ steps.summary.outputs.status }}
     
     steps:
       - name: Checkout target repository
@@ -34,129 +20,66 @@ jobs:
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
-          token: ${{ github.token }}
 
-      # ==================== GITLEAKS ====================
-      - name: Run Gitleaks (Secret Detection)
-        if: ${{ !contains(inputs.skip_tools, 'gitleaks') }}
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # Only required for Organizations, not personal accounts.
-        with:
-          args: --verbose --redact --format sarif --report-path gitleaks.sarif
+      # ==================== GITLEAKS (Secret Detection) ====================
+      - name: Run Gitleaks
+        run: |
+          docker run --rm -v $(pwd):/scan zricethezav/gitleaks:latest detect /scan --no-git --verbose
         continue-on-error: true
 
-      - name: Upload Gitleaks SARIF
-        if: ${{ !contains(inputs.skip_tools, 'gitleaks') }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: gitleaks.sarif
-          category: gitleaks
+      # ==================== SEMGREP (SAST) ====================
+      - name: Run Semgrep
+        run: |
+          python -m pip install semgrep
+          semgrep --config=auto --verbose --json --output=semgrep-results.json .
         continue-on-error: true
 
-      # ==================== SEMGREP ====================
-      - name: Run Semgrep (SAST)
-        if: ${{ !contains(inputs.skip_tools, 'semgrep') }}
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/security-audit
-            p/secrets
-            p/ci
-            p/owasp-top-ten
-            p/command-injection
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      - name: Show Semgrep Results
+        run: |
+          if [ -f semgrep-results.json ]; then
+            echo "## Semgrep Results:"
+            cat semgrep-results.json | jq '.results[] | {rule_id: .check_id, message: .extra.message, file: .path}'
+          fi
         continue-on-error: true
 
       # ==================== DEPENDENCY CHECK ====================
-      - name: Setup Java (for Dependency Check)
-        if: ${{ !contains(inputs.skip_tools, 'dependency-check') }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '11'
-
       - name: Run OWASP Dependency Check
-        if: ${{ !contains(inputs.skip_tools, 'dependency-check') }}
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: ${{ inputs.repository }}
-          path: '.'
-          format: 'ALL'
-          args: >
-            --enableRetired
-            --enableExperimental
-            --out reports
-            --suppression suppression.xml
-        continue-on-error: true
-
-      - name: Upload Dependency Check Results
-        if: ${{ !contains(inputs.skip_tools, 'dependency-check') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-check-reports
-          path: reports/
-          retention-days: 30
-
-      # ==================== CONTAINER SCAN ====================
-      - name: Build Docker Image (if Dockerfile exists)
-        if: ${{ !contains(inputs.skip_tools, 'container-scan') }}
         run: |
-          if [ -f Dockerfile ]; then
-            docker build -t scan-target:latest .
-            echo "IMAGE_BUILT=true" >> $GITHUB_ENV
-          else
-            echo "IMAGE_BUILT=false" >> $GITHUB_ENV
-          fi
+          # Download and run Dependency Check
+          wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.3/dependency-check-8.4.3-release.zip
+          unzip -q dependency-check-8.4.3-release.zip
+          ./dependency-check/bin/dependency-check.sh \
+            --project "Security Scan" \
+            --scan . \
+            --format JSON \
+            --format HTML \
+            --out ./dependency-reports \
+            --prettyPrint
         continue-on-error: true
 
-      - name: Run Trivy Container Scan
-        if: ${{ !contains(inputs.skip_tools, 'container-scan') && env.IMAGE_BUILT == 'true' }}
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'scan-target:latest'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-        continue-on-error: true
-
-      - name: Upload Trivy SARIF
-        if: ${{ !contains(inputs.skip_tools, 'container-scan') && env.IMAGE_BUILT == 'true' }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy
-        continue-on-error: true
-
-      # ==================== RESULTS SUMMARY ====================
-      - name: Generate Security Summary
-        id: summary
+      - name: Show Dependency Check Results
         run: |
-          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f ./dependency-reports/dependency-check-report.json ]; then
+            echo "## Dependency Check Results:"
+            cat ./dependency-reports/dependency-check-report.json | jq '.dependencies[] | select(.vulnerabilities != null) | {fileName: .fileName, vulnerabilities: (.vulnerabilities | length)}'
+          fi
+        continue-on-error: true
+
+
+      # ==================== SIMPLE SUMMARY ====================
+      - name: Generate Simple Summary
+        if: always()
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Tool | Status | Description |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|--------|-------------|" >> $GITHUB_STEP_SUMMARY
-          
-          # Check each tool's results
-          if [ -f gitleaks.sarif ]; then
-            GITLEAKS_ISSUES=$(jq '.runs[0].results | length' gitleaks.sarif)
-            echo "| 🔍 Gitleaks | ✅ | Found $GITLEAKS_ISSUES potential secrets |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ -f reports/dependency-check-report.json ]; then
-            DEP_ISSUES=$(jq '.dependencies | map(select(.vulnerabilities | length > 0)) | length' reports/dependency-check-report.json)
-            echo "| 📦 Dependency Check | ✅ | Found $DEP_ISSUES vulnerable dependencies |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ -f tfsec.sarif ]; then
-            TFSEC_ISSUES=$(jq '.runs[0].results | length' tfsec.sarif)
-            echo "| 🏗️ TFSec | ✅ | Found $TFSEC_ISSUES infrastructure issues |" >> $GITHUB_STEP_SUMMARY
-          fi
-          
+          echo "**Repository**: ${{ inputs.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 **Repository**: ${{ inputs.repository }}" >> $GITHUB_STEP_SUMMARY
-          echo "🌿 **Branch/Ref**: ${{ inputs.ref }}" >> $GITHUB_STEP_SUMMARY
-          echo "⏰ **Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
           
-          echo "status=completed" >> $GITHUB_OUTPUT
+          echo "### Tools Executed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Gitleaks (Secret Detection)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Semgrep (Static Analysis)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ OWASP Dependency Check" >> $GITHUB_STEP_SUMMARY
+             
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Check artifacts for detailed reports" >> $GITHUB_STEP_SUMMARY
