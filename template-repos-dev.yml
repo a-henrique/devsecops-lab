@@ -19,8 +19,10 @@ on:
 jobs:
   security-scan:
     name: Run Security Pipeline
-    uses: SEU-USUARIO/devsecops-pipeline/.github/workflows/security-scan.yml@main
+    uses: a-henrique/devsecops-pipeline/.github/workflows/security-scan.yml@main
     with:
+      repo-token: ${{ secrets.personal_access_token }}
+      configuration-path: ${{ inputs.config-path }}
       repository: ${{ github.repository }}
       ref: ${{ github.ref }}
       language: 'javascript'  # Ajuste conforme o projeto
