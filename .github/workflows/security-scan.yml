@@ -26,7 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install semgrep
-          semgrep --config=auto --verbose
+          semgrep --config=auto --verbose --json --output=semgrep-results.json .
         continue-on-error: true
 
       - name: Show Semgrep Results (summary)
