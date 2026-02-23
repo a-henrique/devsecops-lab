@@ -1,47 +1,47 @@
 name: DevSecOps Security Pipeline
+
 on:
   workflow_call:
-      ref:
-        required: false
-        type: string
-        default: 'main'
 
 jobs:
   security-scan:
     runs-on: ubuntu-latest
-    
+
     steps:
+      # Utilitários que você usa (jq/unzip/wget)
+      - name: Install utils
+        run: sudo apt-get update && sudo apt-get install -y jq unzip wget
+
       - name: Checkout target repository
         uses: actions/checkout@v4
-        with:
-          repository: ${{ inputs.repository }}
-          ref: ${{ inputs.ref }}
 
       # ==================== GITLEAKS (Secret Detection) ====================
       - name: Run Gitleaks
         run: |
-          docker run --rm -v $(pwd):/scan zricethezav/gitleaks:latest detect /scan --no-git --verbose
+          docker run --rm -v "$(pwd):/scan" zricethezav/gitleaks:latest detect /scan --no-git --verbose
         continue-on-error: true
 
       # ==================== SEMGREP (SAST) ====================
       - name: Run Semgrep
         run: |
+          python -m pip install --upgrade pip
           python -m pip install semgrep
           semgrep --config=auto --verbose --json --output=semgrep-results.json .
         continue-on-error: true
 
-      - name: Show Semgrep Results
+      - name: Show Semgrep Results (summary)
         run: |
           if [ -f semgrep-results.json ]; then
             echo "## Semgrep Results:"
-            cat semgrep-results.json | jq '.results[] | {rule_id: .check_id, message: .extra.message, file: .path}'
+            jq '.results[] | {rule_id: .check_id, message: .extra.message, file: .path}' semgrep-results.json || true
+          else
+            echo "No semgrep-results.json found."
           fi
         continue-on-error: true
 
       # ==================== DEPENDENCY CHECK ====================
       - name: Run OWASP Dependency Check
         run: |
-          # Download and run Dependency Check
           wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.3/dependency-check-8.4.3-release.zip
           unzip -q dependency-check-8.4.3-release.zip
           ./dependency-check/bin/dependency-check.sh \
@@ -53,14 +53,18 @@ jobs:
             --prettyPrint
         continue-on-error: true
 
-      - name: Show Dependency Check Results
+      - name: Show Dependency Check Results (summary)
         run: |
           if [ -f ./dependency-reports/dependency-check-report.json ]; then
             echo "## Dependency Check Results:"
-            cat ./dependency-reports/dependency-check-report.json | jq '.dependencies[] | select(.vulnerabilities != null) | {fileName: .fileName, vulnerabilities: (.vulnerabilities | length)}'
+            jq '.dependencies[]
+                | select(.vulnerabilities != null)
+                | {fileName: .fileName, vulnerabilities: (.vulnerabilities | length)}' \
+              ./dependency-reports/dependency-check-report.json || true
+          else
+            echo "No dependency-check-report.json found."
           fi
         continue-on-error: true
-
 
       # ==================== SIMPLE SUMMARY ====================
       - name: Generate Simple Summary
@@ -68,14 +72,15 @@ jobs:
         run: |
           echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository**: ${{ inputs.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository**: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Ref**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "**Scan Date**: $(date)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           echo "### Tools Executed:" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Gitleaks (Secret Detection)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Semgrep (Static Analysis)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ OWASP Dependency Check" >> $GITHUB_STEP_SUMMARY
-             
+
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📁 Check artifacts for detailed reports" >> $GITHUB_STEP_SUMMARY
+          echo "📌 See the job logs for details. (Artifacts upload not configured yet.)" >> $GITHUB_STEP_SUMMARY
