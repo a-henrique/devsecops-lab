@@ -28,9 +28,9 @@ jobs:
           python -m pip install semgrep==1.75.0
           
       - name: Login to Semgrep
-        run: semgrep login --token $SEMGREP_APP_SECRET
+        run: semgrep login --token $SEMGREP_APP_TOKEN
         env:
-          SEMGREP_APP_SECRET: $ {{ secrets.SEMGREP_APP_SECRET }}
+          SEMGREP_APP_TOKEN: $ {{ secrets.SEMGREP_APP_TOKEN }}
       
       - name: Run Semgrep
         run: semgrep --config p/owasp-top-ten --verbose --json --output semgrep-results.json .
