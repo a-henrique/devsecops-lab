@@ -33,7 +33,7 @@ jobs:
           SEMGREP_APP_TOKEN: $ {{ secrets.SEMGREP_APP_TOKEN }}
       
       - name: Run Semgrep
-        run: semgrep --config p/owasp-top-ten --verbose --json --output semgrep-results.json .
+        run: semgrep --config=p/owasp-top-ten --verbose --json --output semgrep-results.json .
         continue-on-error: true
 
       - name: Show Semgrep Results (summary)
