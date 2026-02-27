@@ -28,7 +28,7 @@ jobs:
           python -m pip install semgrep==1.75.0
           
       - name: Login to Semgrep
-        run: semgrep ci
+        run: semgrep login
         env:
           SEMGREP_APP_TOKEN: $ {{ secrets.SEMGREP_APP_TOKEN }}
       
