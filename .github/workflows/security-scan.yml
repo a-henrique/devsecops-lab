@@ -18,8 +18,7 @@ jobs:
       # ==================== GITLEAKS (Secret Detection) ====================
       - name: Run Gitleaks
         run: |
-          docker run --rm -v "$(pwd):/scan" alpine ls /scan && docker run --rm zricethezav/gitleaks:latest version
-        # /scan zricethezav/gitleaks:latest detect --source=/scan --report-format=json --report-path=/scan/gitleaks-report.json --verbose --no-git
+          docker run --rm -v "$(pwd):/scan" /scan zricethezav/gitleaks:latest detect --source=/scan --report-format=json --report-path=/scan/gitleaks-report.json --verbose --no-git
         continue-on-error: true
 
       # ==================== SEMGREP (SAST) ====================
