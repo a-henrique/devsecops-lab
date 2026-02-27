@@ -21,6 +21,9 @@ jobs:
           docker run --rm -v "$(pwd):/scan" zricethezav/gitleaks:latest detect --source=/scan --report-format=json --report-path=/scan/gitleaks-report.json --verbose --no-git
         continue-on-error: true
 
+      # ==================== Tufflehog ===================
+      - name: Tufflehog
+        run: docker run --rm -v "$(pwd):/repo" trufflesecurity/trufflehog:latest filesystem /repo --only-verified
       # ==================== SEMGREP (SAST) ====================
       - name: INSTALL SEMGREP
         run: |
