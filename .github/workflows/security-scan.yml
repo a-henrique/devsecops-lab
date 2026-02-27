@@ -27,14 +27,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install semgrep==1.75.0
           
-      - name: Login to Semgrep
-        run: semgrep login
+      - name: semgrep/ci
+        run: semgrep ci
         env:
-          SEMGREP_APP_TOKEN: $ {{ secrets.SEMGREP_APP_TOKEN }}
-      
-      - name: Run Semgrep
-        run: semgrep --config=p/owasp-top-ten --verbose --json --output semgrep-results.json .
-        continue-on-error: true
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Show Semgrep Results (summary)
         run: |
